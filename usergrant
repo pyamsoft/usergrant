@@ -52,6 +52,7 @@ Run a [command] as "to" user using granted environment and FACLs from the "from"
 -h | -H | --help                                          Show this help
 
 {shortcuts}
+--wayland                                                 Shortcut to adopt environment to run wayland clients
 --x11                                                     Shortcut to adopt environment to run X11 clients
 --audio                                                   Shortcut to adopt environment to play audio via pipewire or pulseaudio
 --input <relative-path> | --input=<relative-path>         Shortcut for --facl=/dev/input/<relative-path>
@@ -612,6 +613,8 @@ main() {
       __run_x11_hooks=1
       _parse_env "DISPLAY" 1 || return 1
       _parse_env "XAUTHORITY" 1 || return 1
+      ;;
+    --wayland)
       _parse_env "WAYLAND_DISPLAY" 1 || return 1
       ;;
     --audio)
