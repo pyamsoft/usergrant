@@ -82,7 +82,7 @@ __grantfacl() {
     for _facl in "$@"; do
       if [ -e "${_facl}" ] && getfacl "${_facl}" 2>/dev/null | grep -q "^user:${__from_user}:rw-$" >/dev/null 2>&1; then
         if setfacl -m "user:${__to_user}:rw" "${_facl}" >/dev/null 2>&1; then
-          printf -- 'Grant facl %s to user %s\n' "${_facl}" "${__to_user}"
+          printf -- '[%s] Grant facl %s to user %s\n' "${PROGRAM}" "${_facl}" "${__to_user}"
           if [ -z "${__granted_facl_paths}" ]; then
             __granted_facl_paths="${_facl}"
           else
@@ -119,9 +119,9 @@ _revokefacl() {
     for _facl in "$@"; do
       if [ -e "${_facl}" ]; then
         if setfacl -x "user:${__to_user}" "${_facl}" >/dev/null 2>&1; then
-          printf -- 'Revoke facl %s from user %s\n' "${_facl}" "${__to_user}"
+          printf -- '[%s] Revoke facl %s from user %s\n' "${PROGRAM}" "${_facl}" "${__to_user}"
         else
-          printf -- 'Failed to revoke facl %s from user :%s\n' "${_facl}" "${__to_user}"
+          printf -- '[%s] Failed to revoke facl %s from user :%s\n' "${PROGRAM}" "${_facl}" "${__to_user}"
         fi
       fi
       unset _facl
@@ -153,11 +153,11 @@ _execfrom() {
 
     # shellcheck disable=SC2016
     "${__runner}" --background="" -u "${__from_user}" "$@" || {
-      printf -- 'Unable to use "%s" to execute command as %s.\n' "${__runner}" "${__from_user}" >&2
+      printf -- '[%s] Unable to use "%s" to execute command as %s.\n' "${PROGRAM}" "${__runner}" "${__from_user}" >&2
       return 1
     }
   else
-    printf -- 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
+    printf -- '[%s] Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${PROGRAM}" "${__runner}" "${__from_user}" >&2
     return 1
   fi
 
@@ -182,11 +182,11 @@ _execto() {
 
     # shellcheck disable=SC2016
     "${__runner}" --background="" -u "${__to_user}" "$@" || {
-      printf -- 'Unable to use "%s" to execute command as %s.\n' "${__runner}" "${__to_user}" >&2
+      printf -- '[%s] Unable to use "%s" to execute command as %s.\n' "${PROGRAM}" "${__runner}" "${__to_user}" >&2
       return 1
     }
   else
-    printf -- 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
+    printf -- '[%s] Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${PROGRAM}" "${__runner}" "${__from_user}" >&2
     return 1
   fi
 
@@ -215,13 +215,13 @@ _evalenv() {
   _evalenv_var="$1"
 
   if [ -z "${__from_user}" ]; then
-    printf -- 'Unable to evaluate environment, no "from" user\n' >&2
+    printf -- '[%s] Unable to evaluate environment, no "from" user\n' "${PROGRAM}" >&2
     unset _evalenv_var
     return 1
   fi
 
   if [ -z "${_evalenv_var}" ]; then
-    printf -- 'Unable to evaluate environment, no VAR passed for evaluation\n' >&2
+    printf -- '[%s] Unable to evaluate environment, no VAR passed for evaluation\n' "${PROGRAM}" >&2
     unset _evalenv_var
     return 1
   fi
@@ -289,13 +289,13 @@ ${__adopted_env}"
 
   if [ "${__runner}" = "run0" ]; then
     _prepenv_run0 "${_prepenv_key}" "${_prepenv_value}" || {
-      printf -- 'Failed to prep run0 environment %s=%s\n' "${_prepenv_key}" "${_prepenv_value}"
+      printf -- '[%s] Failed to prep run0 environment %s=%s\n' "${PROGRAM}" "${_prepenv_key}" "${_prepenv_value}"
       unset _prepenv_key
       unset _prepenv_value
       return 1
     }
   else
-    printf -- 'Unsupported runner program %s. Cannot prepare environment %s=%s\n' "${__runner}" "${_prepenv_key}" "${_prepenv_value}"
+    printf -- '[%s] Unsupported runner program %s. Cannot prepare environment %s=%s\n' "${PROGRAM}" "${__runner}" "${_prepenv_key}" "${_prepenv_value}"
     unset _prepenv_key
     unset _prepenv_value
     return 1
@@ -343,7 +343,7 @@ _parse_env() {
       }
     else
       if [ "${_parse_env_required}" -eq 1 ]; then
-        printf -- 'Environment variable is required for %s\n' "${_parse_env_var}"
+        printf -- '[%s] Environment variable is required for %s\n' "${PROGRAM}" "${_parse_env_var}"
 
         unset _env_value
         unset _parse_env_var
@@ -353,7 +353,7 @@ _parse_env() {
     fi
     unset _env_value
   else
-    printf -- 'Variable is required for --env\n'
+    printf -- '[%s] Variable is required for --env\n' "${PROGRAM}"
 
     unset _parse_env_var
     unset _parse_env_required
@@ -371,7 +371,7 @@ _parse_env_equals() {
 
   _env_var="$(printf -- '%s' "${_parse_env_var}" | tr '=' ' ' | awk '{ print $2 }')"
   if [ -z "${_env_var}" ]; then
-    printf -- 'Variable is required for --env=\n'
+    printf -- '[%s] Variable is required for --env=\n' "${PROGRAM}"
 
     unset _env_var
     unset _parse_env_var
@@ -390,7 +390,7 @@ _parse_env_equals() {
     }
   else
     if [ "${_parse_env_required}" -eq 1 ]; then
-      printf -- 'Environment variable is required for %s\n' "${_parse_env_var}"
+      printf -- '[%s] Environment variable is required for %s\n' "${PROGRAM}" "${_parse_env_var}"
 
       unset _env_value
       unset _parse_env_var
@@ -417,7 +417,7 @@ _parse_facl() {
       return 1
     }
   else
-    printf -- 'Device path is required for --facl\n'
+    printf -- '[%s] Device path is required for --facl\n' "${PROGRAM}"
 
     unset _parse_facl_path
     unset _parse_facl_required
@@ -435,7 +435,7 @@ _parse_facl_equals() {
 
   _facl_path="$(printf -- '%s' "${_parse_facl_path}" | tr '=' ' ' | awk '{ print $2 }')"
   if [ -z "${_facl_path}" ]; then
-    printf -- 'Device path is required for --facl=\n'
+    printf -- '[%s] Device path is required for --facl=\n' "${PROGRAM}"
 
     unset _facl_path
     unset _parse_facl_path
@@ -452,7 +452,7 @@ _parse_facl_equals() {
     }
   else
     if [ "${_parse_facl_required}" -eq 1 ]; then
-      printf -- 'Device path variable is required for %s\n' "${_parse_facl_path}"
+      printf -- '[%s] Device path variable is required for %s\n' "${PROGRAM}" "${_parse_facl_path}"
 
       unset _parse_facl_path
       unset _parse_facl_required
@@ -470,7 +470,7 @@ _parse_facl_equals() {
 # Prepare to share X11 server access
 _prepare_x11() {
   if ! _execfrom xhost "+SI:localuser:${__to_user}"; then
-    printf -- 'Failed to grant xhost access %s => %s\n' "${__from_user}" "${__to_user}"
+    printf -- '[%s] Failed to grant xhost access %s => %s\n' "${PROGRAM}" "${__from_user}" "${__to_user}"
     return 1
   fi
 
@@ -481,7 +481,7 @@ _prepare_x11() {
 # Cleanup shared audio server access
 _cleanup_x11() {
   if [ "${__run_x11_hooks}" -eq 1 ]; then
-    printf -- 'Clean up X11 xhost access...\n'
+    printf -- '[%s] Clean up X11 xhost access...\n' "${PROGRAM}"
 
     _execfrom xhost "-SI:localuser:${__to_user}" >/dev/null 2>&1
   fi
@@ -497,14 +497,14 @@ _prepare_audio() {
 
   # If module fails to load, well shit
   if [ -z "${__pactl_module_id}" ]; then
-    printf -- 'Failed to setup %s module for audio\n' "${_PACTL_MODULE}"
+    printf -- '[%s] Failed to setup %s module for audio\n' "${PROGRAM}" "${_PACTL_MODULE}"
     return 1
   fi
 
   # As the to user, prepare to consume the socket
   _prepenv "PULSE_SERVER" "tcp:127.0.0.1:${_PACTL_PORT}" || return 1
 
-  printf -- 'Allow TCP connections to audio server at tcp:127.0.0.1:%s (%s)\n' "${_PACTL_PORT}" "${__pactl_module_id}"
+  printf -- '[%s] Allow TCP connections to audio server at tcp:127.0.0.1:%s (%s)\n' "${PROGRAM}" "${_PACTL_PORT}" "${__pactl_module_id}"
   return 0
 }
 
@@ -513,7 +513,7 @@ _prepare_audio() {
 _cleanup_audio() {
   if [ "${__run_audio_hooks}" -eq 1 ]; then
     if [ -n "${__pactl_module_id}" ]; then
-      printf -- 'Clean up audio TCP module at tcp:127.0.0.1:%s (%s)\n' "${_PACTL_PORT}" "${__pactl_module_id}"
+      printf -- '[%s] Clean up audio TCP module at tcp:127.0.0.1:%s (%s)\n' "${PROGRAM}" "${_PACTL_PORT}" "${__pactl_module_id}"
 
       # Teardown the TCP socket module
       _execfrom pactl unload-module "${__pactl_module_id}" >/dev/null 2>&1
@@ -543,7 +543,7 @@ main() {
   #
   # Maybe in the future we won't need to be root as long as we have certain CAPS but for now, root.
   if [ "$(id -u)" -ne 0 ]; then
-    printf -- 'You must run this as root.\n\n'
+    printf -- '[%s] You must run this as root.\n\n' "${PROGRAM}"
     _usage || return 1
     return 1
   fi
@@ -556,7 +556,7 @@ main() {
       __from_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
       if [ -z "${__from_user}" ]; then
         __from_user=""
-        printf -- 'User is required for --from=\n'
+        printf -- '[%s] User is required for --from=\n' "${PROGRAM}"
         return 1
       fi
       ;;
@@ -565,7 +565,7 @@ main() {
         __from_user="$2"
       else
         __from_user=""
-        printf -- 'User is required for -F | --from\n'
+        printf -- '[%s] User is required for -F | --from\n' "${PROGRAM}"
         return 1
       fi
       shift
@@ -574,7 +574,7 @@ main() {
       __to_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
       if [ -z "${__to_user}" ]; then
         __to_user=""
-        printf -- 'User is required for --to-user=\n'
+        printf -- '[%s] User is required for --to-user=\n' "${PROGRAM}"
         return 1
       fi
       ;;
@@ -583,7 +583,7 @@ main() {
         __to_user="$2"
       else
         __to_user=""
-        printf -- 'User is required for -T | --to\n'
+        printf -- '[%s] User is required for -T | --to\n' "${PROGRAM}"
         return 1
       fi
       shift
@@ -629,7 +629,7 @@ main() {
       break
       ;;
     *)
-      printf -- 'Unrecognized option: %s\n\n' "${_cmd}"
+      printf -- '[%s] Unrecognized option: %s\n\n' "${PROGRAM}" "${_cmd}"
       _usage || return 1
       return 1
       ;;
@@ -641,19 +641,19 @@ main() {
   unset _cmd
 
   if [ -z "${__from_user}" ]; then
-    printf -- 'Must have target "--from"\n'
+    printf -- '[%s] Must have target "--from"\n' "${PROGRAM}"
     _usage || return 1
     return 1
   fi
 
   if [ -z "${__to_user}" ]; then
-    printf -- 'Must have target "--to"\n'
+    printf -- '[%s] Must have target "--to"\n' "${PROGRAM}"
     _usage || return 1
     return 1
   fi
 
   if [ "${__from_user}" = "${__to_user}" ]; then
-    printf -- '"from" and "to" user must not be the same: %s\n' "${__from_user}"
+    printf -- '[%s] "from" and "to" user must not be the same: %s\n' "${PROGRAM}" "${__from_user}"
     return 1
   fi
 
@@ -662,7 +662,7 @@ main() {
 
   if [ "${__run_x11_hooks}" -eq 1 ]; then
     _prepare_x11 || {
-      printf -- 'Failed to prepare X11 environment from %s => %s' "${__from_user}" "${__to_user}"
+      printf -- '[%s] Failed to prepare X11 environment from %s => %s' "${PROGRAM}" "${__from_user}" "${__to_user}"
       _cleanup || return 1
       return 1
     }
@@ -677,7 +677,7 @@ main() {
   if [ "${__run_audio_hooks}" -eq 1 ]; then
     # Audio must be linked last since it sets an environment variable
     _prepare_audio || {
-      printf -- 'Failed to prepare audio environment from %s => %s' "${__from_user}" "${__to_user}"
+      printf -- '[%s] Failed to prepare audio environment from %s => %s' "${PROGRAM}" "${__from_user}" "${__to_user}"
       _cleanup || return 1
       return 1
     }
