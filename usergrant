@@ -469,11 +469,12 @@ _parse_facl_equals() {
 ##
 # Prepare to share X11 server access
 _prepare_x11() {
-  if ! _execfrom xhost "+SI:localuser:${__to_user}"; then
+  if ! _execfrom xhost "+SI:localuser:${__to_user}" >/dev/null 2>&1; then
     printf -- '[%s] Failed to grant xhost access %s => %s\n' "${PROGRAM}" "${__from_user}" "${__to_user}"
     return 1
   fi
 
+  printf -- '[%s] Granted xhost access %s => %s\n' "${PROGRAM}" "${__from_user}" "${__to_user}"
   return 0
 }
 
