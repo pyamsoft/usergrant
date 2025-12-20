@@ -32,6 +32,19 @@ __environment=""
 __run_x11_hooks=0
 __run_audio_hooks=0
 
+_log() {
+  _log_msg="$1"
+
+  if [ -n "${_log_msg}" ]; then
+    shift
+
+    printf -- "[%s] ${_log_msg}" "${PROGRAM}" "$@" || return 1
+  fi
+
+  unset _log_msg
+  return 0
+}
+
 ##
 # Command usage
 _usage() {
@@ -82,7 +95,7 @@ __grantfacl() {
     for _facl in "$@"; do
       if [ -e "${_facl}" ] && getfacl "${_facl}" 2>/dev/null | grep -q "^user:${__from_user}:rw-$" >/dev/null 2>&1; then
         if setfacl -m "user:${__to_user}:rw" "${_facl}" >/dev/null 2>&1; then
-          printf -- '[%s] Grant facl %s to user %s\n' "${PROGRAM}" "${_facl}" "${__to_user}"
+          _log 'Grant facl %s to user %s\n' "${_facl}" "${__to_user}"
           if [ -z "${__granted_facl_paths}" ]; then
             __granted_facl_paths="${_facl}"
           else
@@ -119,9 +132,9 @@ _revokefacl() {
     for _facl in "$@"; do
       if [ -e "${_facl}" ]; then
         if setfacl -x "user:${__to_user}" "${_facl}" >/dev/null 2>&1; then
-          printf -- '[%s] Revoke facl %s from user %s\n' "${PROGRAM}" "${_facl}" "${__to_user}"
+          _log 'Revoke facl %s from user %s\n' "${_facl}" "${__to_user}"
         else
-          printf -- '[%s] Failed to revoke facl %s from user :%s\n' "${PROGRAM}" "${_facl}" "${__to_user}"
+          _log 'Failed to revoke facl %s from user :%s\n' "${_facl}" "${__to_user}"
         fi
       fi
       unset _facl
@@ -153,11 +166,11 @@ _execfrom() {
 
     # shellcheck disable=SC2016
     "${__runner}" --background="" -u "${__from_user}" "$@" || {
-      printf -- '[%s] Unable to use "%s" to execute command as %s.\n' "${PROGRAM}" "${__runner}" "${__from_user}" >&2
+      _log 'Unable to use "%s" to execute command as %s.\n' "${__runner}" "${__from_user}" >&2
       return 1
     }
   else
-    printf -- '[%s] Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${PROGRAM}" "${__runner}" "${__from_user}" >&2
+    _log 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
     return 1
   fi
 
@@ -182,11 +195,11 @@ _execto() {
 
     # shellcheck disable=SC2016
     "${__runner}" --background="" -u "${__to_user}" "$@" || {
-      printf -- '[%s] Unable to use "%s" to execute command as %s.\n' "${PROGRAM}" "${__runner}" "${__to_user}" >&2
+      _log 'Unable to use "%s" to execute command as %s.\n' "${__runner}" "${__to_user}" >&2
       return 1
     }
   else
-    printf -- '[%s] Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${PROGRAM}" "${__runner}" "${__from_user}" >&2
+    _log 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
     return 1
   fi
 
@@ -215,13 +228,13 @@ _evalenv() {
   _evalenv_var="$1"
 
   if [ -z "${__from_user}" ]; then
-    printf -- '[%s] Unable to evaluate environment, no "from" user\n' "${PROGRAM}" >&2
+    _log 'Unable to evaluate environment, no "from" user\n' >&2
     unset _evalenv_var
     return 1
   fi
 
   if [ -z "${_evalenv_var}" ]; then
-    printf -- '[%s] Unable to evaluate environment, no VAR passed for evaluation\n' "${PROGRAM}" >&2
+    _log 'Unable to evaluate environment, no VAR passed for evaluation\n' >&2
     unset _evalenv_var
     return 1
   fi
@@ -289,13 +302,13 @@ ${__adopted_env}"
 
   if [ "${__runner}" = "run0" ]; then
     _prepenv_run0 "${_prepenv_key}" "${_prepenv_value}" || {
-      printf -- '[%s] Failed to prep run0 environment %s=%s\n' "${PROGRAM}" "${_prepenv_key}" "${_prepenv_value}"
+      _log 'Failed to prep run0 environment %s=%s\n' "${_prepenv_key}" "${_prepenv_value}"
       unset _prepenv_key
       unset _prepenv_value
       return 1
     }
   else
-    printf -- '[%s] Unsupported runner program %s. Cannot prepare environment %s=%s\n' "${PROGRAM}" "${__runner}" "${_prepenv_key}" "${_prepenv_value}"
+    _log 'Unsupported runner program %s. Cannot prepare environment %s=%s\n' "${__runner}" "${_prepenv_key}" "${_prepenv_value}"
     unset _prepenv_key
     unset _prepenv_value
     return 1
@@ -343,7 +356,7 @@ _parse_env() {
       }
     else
       if [ "${_parse_env_required}" -eq 1 ]; then
-        printf -- '[%s] Environment variable is required for %s\n' "${PROGRAM}" "${_parse_env_var}"
+        _log 'Environment variable is required for %s\n' "${_parse_env_var}"
 
         unset _env_value
         unset _parse_env_var
@@ -353,7 +366,7 @@ _parse_env() {
     fi
     unset _env_value
   else
-    printf -- '[%s] Variable is required for --env\n' "${PROGRAM}"
+    _log 'Variable is required for --env\n'
 
     unset _parse_env_var
     unset _parse_env_required
@@ -371,7 +384,7 @@ _parse_env_equals() {
 
   _env_var="$(printf -- '%s' "${_parse_env_var}" | tr '=' ' ' | awk '{ print $2 }')"
   if [ -z "${_env_var}" ]; then
-    printf -- '[%s] Variable is required for --env=\n' "${PROGRAM}"
+    _log 'Variable is required for --env=\n'
 
     unset _env_var
     unset _parse_env_var
@@ -390,7 +403,7 @@ _parse_env_equals() {
     }
   else
     if [ "${_parse_env_required}" -eq 1 ]; then
-      printf -- '[%s] Environment variable is required for %s\n' "${PROGRAM}" "${_parse_env_var}"
+      _log 'Environment variable is required for %s\n' "${_parse_env_var}"
 
       unset _env_value
       unset _parse_env_var
@@ -417,7 +430,7 @@ _parse_facl() {
       return 1
     }
   else
-    printf -- '[%s] Device path is required for --facl\n' "${PROGRAM}"
+    _log 'Device path is required for --facl\n'
 
     unset _parse_facl_path
     unset _parse_facl_required
@@ -435,7 +448,7 @@ _parse_facl_equals() {
 
   _facl_path="$(printf -- '%s' "${_parse_facl_path}" | tr '=' ' ' | awk '{ print $2 }')"
   if [ -z "${_facl_path}" ]; then
-    printf -- '[%s] Device path is required for --facl=\n' "${PROGRAM}"
+    _log 'Device path is required for --facl=\n'
 
     unset _facl_path
     unset _parse_facl_path
@@ -452,7 +465,7 @@ _parse_facl_equals() {
     }
   else
     if [ "${_parse_facl_required}" -eq 1 ]; then
-      printf -- '[%s] Device path variable is required for %s\n' "${PROGRAM}" "${_parse_facl_path}"
+      _log 'Device path variable is required for %s\n' "${_parse_facl_path}"
 
       unset _parse_facl_path
       unset _parse_facl_required
@@ -470,11 +483,11 @@ _parse_facl_equals() {
 # Prepare to share X11 server access
 _prepare_x11() {
   if ! _execfrom xhost "+SI:localuser:${__to_user}" >/dev/null 2>&1; then
-    printf -- '[%s] Failed to grant xhost access %s => %s\n' "${PROGRAM}" "${__from_user}" "${__to_user}"
+    _log 'Failed to grant xhost access %s => %s\n' "${__from_user}" "${__to_user}"
     return 1
   fi
 
-  printf -- '[%s] Granted xhost access %s => %s\n' "${PROGRAM}" "${__from_user}" "${__to_user}"
+  _log 'Granted xhost access %s => %s\n' "${__from_user}" "${__to_user}"
   return 0
 }
 
@@ -482,7 +495,7 @@ _prepare_x11() {
 # Cleanup shared audio server access
 _cleanup_x11() {
   if [ "${__run_x11_hooks}" -eq 1 ]; then
-    printf -- '[%s] Clean up X11 xhost access...\n' "${PROGRAM}"
+    _log 'Clean up X11 xhost access...\n'
 
     _execfrom xhost "-SI:localuser:${__to_user}" >/dev/null 2>&1
   fi
@@ -498,14 +511,14 @@ _prepare_audio() {
 
   # If module fails to load, well shit
   if [ -z "${__pactl_module_id}" ]; then
-    printf -- '[%s] Failed to setup %s module for audio\n' "${PROGRAM}" "${_PACTL_MODULE}"
+    _log 'Failed to setup %s module for audio\n' "${_PACTL_MODULE}"
     return 1
   fi
 
   # As the to user, prepare to consume the socket
   _prepenv "PULSE_SERVER" "tcp:127.0.0.1:${_PACTL_PORT}" || return 1
 
-  printf -- '[%s] Allow TCP connections to audio server at tcp:127.0.0.1:%s (%s)\n' "${PROGRAM}" "${_PACTL_PORT}" "${__pactl_module_id}"
+  _log 'Allow TCP connections to audio server at tcp:127.0.0.1:%s (%s)\n' "${_PACTL_PORT}" "${__pactl_module_id}"
   return 0
 }
 
@@ -514,7 +527,7 @@ _prepare_audio() {
 _cleanup_audio() {
   if [ "${__run_audio_hooks}" -eq 1 ]; then
     if [ -n "${__pactl_module_id}" ]; then
-      printf -- '[%s] Clean up audio TCP module at tcp:127.0.0.1:%s (%s)\n' "${PROGRAM}" "${_PACTL_PORT}" "${__pactl_module_id}"
+      _log 'Clean up audio TCP module at tcp:127.0.0.1:%s (%s)\n' "${_PACTL_PORT}" "${__pactl_module_id}"
 
       # Teardown the TCP socket module
       _execfrom pactl unload-module "${__pactl_module_id}" >/dev/null 2>&1
@@ -544,7 +557,7 @@ main() {
   #
   # Maybe in the future we won't need to be root as long as we have certain CAPS but for now, root.
   if [ "$(id -u)" -ne 0 ]; then
-    printf -- '[%s] You must run this as root.\n\n' "${PROGRAM}"
+    _log 'You must run this as root.\n\n'
     _usage || return 1
     return 1
   fi
@@ -557,7 +570,7 @@ main() {
       __from_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
       if [ -z "${__from_user}" ]; then
         __from_user=""
-        printf -- '[%s] User is required for --from=\n' "${PROGRAM}"
+        _log 'User is required for --from=\n'
         return 1
       fi
       ;;
@@ -566,7 +579,7 @@ main() {
         __from_user="$2"
       else
         __from_user=""
-        printf -- '[%s] User is required for -F | --from\n' "${PROGRAM}"
+        _log 'User is required for -F | --from\n'
         return 1
       fi
       shift
@@ -575,7 +588,7 @@ main() {
       __to_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
       if [ -z "${__to_user}" ]; then
         __to_user=""
-        printf -- '[%s] User is required for --to-user=\n' "${PROGRAM}"
+        _log 'User is required for --to-user=\n'
         return 1
       fi
       ;;
@@ -584,7 +597,7 @@ main() {
         __to_user="$2"
       else
         __to_user=""
-        printf -- '[%s] User is required for -T | --to\n' "${PROGRAM}"
+        _log 'User is required for -T | --to\n'
         return 1
       fi
       shift
@@ -630,7 +643,7 @@ main() {
       break
       ;;
     *)
-      printf -- '[%s] Unrecognized option: %s\n\n' "${PROGRAM}" "${_cmd}"
+      _log 'Unrecognized option: %s\n\n' "${_cmd}"
       _usage || return 1
       return 1
       ;;
@@ -642,19 +655,19 @@ main() {
   unset _cmd
 
   if [ -z "${__from_user}" ]; then
-    printf -- '[%s] Must have target "--from"\n' "${PROGRAM}"
+    _log 'Must have target "--from"\n'
     _usage || return 1
     return 1
   fi
 
   if [ -z "${__to_user}" ]; then
-    printf -- '[%s] Must have target "--to"\n' "${PROGRAM}"
+    _log 'Must have target "--to"\n'
     _usage || return 1
     return 1
   fi
 
   if [ "${__from_user}" = "${__to_user}" ]; then
-    printf -- '[%s] "from" and "to" user must not be the same: %s\n' "${PROGRAM}" "${__from_user}"
+    _log '"from" and "to" user must not be the same: %s\n' "${__from_user}"
     return 1
   fi
 
@@ -663,7 +676,7 @@ main() {
 
   if [ "${__run_x11_hooks}" -eq 1 ]; then
     _prepare_x11 || {
-      printf -- '[%s] Failed to prepare X11 environment from %s => %s' "${PROGRAM}" "${__from_user}" "${__to_user}"
+      _log 'Failed to prepare X11 environment from %s => %s' "${__from_user}" "${__to_user}"
       _cleanup || return 1
       return 1
     }
@@ -678,7 +691,7 @@ main() {
   if [ "${__run_audio_hooks}" -eq 1 ]; then
     # Audio must be linked last since it sets an environment variable
     _prepare_audio || {
-      printf -- '[%s] Failed to prepare audio environment from %s => %s' "${PROGRAM}" "${__from_user}" "${__to_user}"
+      _log 'Failed to prepare audio environment from %s => %s' "${__from_user}" "${__to_user}"
       _cleanup || return 1
       return 1
     }
