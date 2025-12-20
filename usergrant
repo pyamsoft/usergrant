@@ -1,0 +1,691 @@
+#!/bin/sh
+
+readonly VERSION="0.0.1"
+readonly PROGRAM="usergrant"
+
+# Allow pipewire/pulseaudio to send audio data over a TCP socket
+readonly _PACTL_MODULE="module-native-protocol-tcp"
+_PACTL_PORT="$(shuf -i 3000-40000 -n 1)"
+readonly _PACTL_PORT
+
+# An IFS that only breaks on newlines
+readonly _NEWLINE_IFS="
+"
+
+# If audio is loaded this will be set to the module number for our TCP socket
+__pactl_module_id=""
+
+__from_user=""
+__to_user=""
+
+__facl_paths=""
+__granted_facl_paths=""
+
+# May be able to support various runuser, but for now, support run0
+#
+# run0 expects format '--setenv=ENV=VAR'
+__runner="run0"
+
+__adopted_env=""
+__environment=""
+
+__run_x11_hooks=0
+__run_audio_hooks=0
+
+##
+# Command usage
+_usage() {
+  printf -- '%s\n' "$(
+    cat <<EOF
+USAGE:
+
+${PROGRAM} ${VERSION} <option(s)|shortcut(s)> [--] [command...]
+
+Run a [command] as "to" user using granted environment and FACLs from the "from" user
+
+<options>
+-F <user> | --from <user> | --from=<user>                 Grant ACLs and environment "from" this user
+-T <user> | --to <user> | --to=<user>                     Receive ACLs and environment "to" this user
+--env <variable> | --env=<variable>                       Grant this environment variable from the "from" user to the "to" user
+--require-env <variable> | --require-env=<variable>       Like --env but fail if variable is not defined.
+--facl <full-path> | --facl=<full-path>                   Grant facl for the "to" user if the "from" user has access
+-h | -H | --help                                          Show this help
+
+{shortcuts}
+--x11                                                     Shortcut to adopt environment to run X11 clients
+--audio                                                   Shortcut to adopt environment to play audio via pipewire or pulseaudio
+--input <relative-path> | --input=<relative-path>         Shortcut for --facl=/dev/input/<relative-path>
+
+--                                                        Stop processing command line arguments
+EOF
+  )"
+}
+
+__grantfacl() {
+  if [ -n "${__facl_paths}" ]; then
+    # We must evaluate the environment for the "from" user since run0 may not setup the environment in this
+    # non-interactive shell
+
+    # Set the IFS to newline only
+    _old_ifs="${IFS}"
+    IFS="${_NEWLINE_IFS}"
+    # Assign the arguments to the "$@" array
+    #
+    # this will safely evaluate arguments with nested spaces without requiring eval
+    #
+    # shellcheck disable=SC2086
+    set -- ${__facl_paths}
+    IFS="${_old_ifs}"
+    unset _old_ifs
+
+    for _facl in "$@"; do
+      if [ -e "${_facl}" ] && getfacl "${_facl}" 2>/dev/null | grep -q "^user:${__from_user}:rw-$" >/dev/null 2>&1; then
+        if setfacl -m "user:${__to_user}:rw" "${_facl}" >/dev/null 2>&1; then
+          printf -- 'Grant facl %s to user %s\n' "${_facl}" "${__to_user}"
+          if [ -z "${__granted_facl_paths}" ]; then
+            __granted_facl_paths="${_facl}"
+          else
+            __granted_facl_paths="${_facl}
+${__granted_facl_paths}"
+          fi
+        fi
+      fi
+      unset _facl
+    done
+    unset _facl
+  fi
+
+  return 0
+}
+
+_revokefacl() {
+  if [ -n "${__granted_facl_paths}" ]; then
+    # We must evaluate the environment for the "from" user since run0 may not setup the environment in this
+    # non-interactive shell
+
+    # Set the IFS to newline only
+    _old_ifs="${IFS}"
+    IFS="${_NEWLINE_IFS}"
+    # Assign the arguments to the "$@" array
+    #
+    # this will safely evaluate arguments with nested spaces without requiring eval
+    #
+    # shellcheck disable=SC2086
+    set -- ${__granted_facl_paths}
+    IFS="${_old_ifs}"
+    unset _old_ifs
+
+    for _facl in "$@"; do
+      if [ -e "${_facl}" ]; then
+        if setfacl -x "user:${__to_user}" "${_facl}" >/dev/null 2>&1; then
+          printf -- 'Revoke facl %s from user %s\n' "${_facl}" "${__to_user}"
+        else
+          printf -- 'Failed to revoke facl %s from user :%s\n' "${_facl}" "${__to_user}"
+        fi
+      fi
+      unset _facl
+    done
+    unset _facl
+  fi
+
+  return 0
+}
+
+##
+# Run a command as "from" user
+_execfrom() {
+  if command -v "${__runner}" >/dev/null; then
+    # We must evaluate the environment for the "from" user since run0 may not setup the environment in this
+    # non-interactive shell
+
+    # Set the IFS to newline only
+    _old_ifs="${IFS}"
+    IFS="${_NEWLINE_IFS}"
+    # Assign the arguments to the "$@" array
+    #
+    # this will safely evaluate arguments with nested spaces without requiring eval
+    #
+    # shellcheck disable=SC2086
+    set -- ${__environment} "$@"
+    IFS="${_old_ifs}"
+    unset _old_ifs
+
+    # shellcheck disable=SC2016
+    "${__runner}" --background="" -u "${__from_user}" "$@" || {
+      printf -- 'Unable to use "%s" to execute command as %s.\n' "${__runner}" "${__from_user}" >&2
+      return 1
+    }
+  else
+    printf -- 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+##
+# Run a command as "to" user
+_execto() {
+  if command -v "${__runner}" >/dev/null; then
+    # Set the IFS to newline only
+    _old_ifs="${IFS}"
+    IFS="${_NEWLINE_IFS}"
+    # Assign the arguments to the "$@" array
+    #
+    # this will safely evaluate arguments with nested spaces without requiring eval
+    #
+    # shellcheck disable=SC2086
+    set -- ${__environment} "$@"
+    IFS="${_old_ifs}"
+    unset _old_ifs
+
+    # shellcheck disable=SC2016
+    "${__runner}" --background="" -u "${__to_user}" "$@" || {
+      printf -- 'Unable to use "%s" to execute command as %s.\n' "${__runner}" "${__to_user}" >&2
+      return 1
+    }
+  else
+    printf -- 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+##
+# Grab env var
+#
+# You MUST call this function with at least 1 argument
+_grabenvvar() {
+  _grabenvvar_var="$1"
+  shift
+
+  _execfrom "$@" | grep "^${_evalenv_var}=" | tr '=' ' ' | awk '{ print $2 }' || {
+    unset _grabenvvar_var
+    return 1
+  }
+  unset _grabenvvar_var
+  return 0
+}
+
+##
+# Evaluate the environment variable for the "from" user
+_evalenv() {
+  _evalenv_var="$1"
+
+  if [ -z "${__from_user}" ]; then
+    printf -- 'Unable to evaluate environment, no "from" user\n' >&2
+    unset _evalenv_var
+    return 1
+  fi
+
+  if [ -z "${_evalenv_var}" ]; then
+    printf -- 'Unable to evaluate environment, no VAR passed for evaluation\n' >&2
+    unset _evalenv_var
+    return 1
+  fi
+
+  # Try from systemctl
+  _grabenvvar "${_evalenv_var}" systemctl --user show-environment || {
+    # Fallback to env
+    _grabenvvar "${_evalenv_var}" systemctl --user show-environment || {
+      unset _evalenv_var
+      return 1
+    }
+  }
+
+  unset _evalenv_var
+  return 0
+}
+
+##
+# Setup environment
+_setenv() {
+  _setenv_arg="$1"
+  if [ -z "${__environment}" ]; then
+    __environment="${_setenv_arg}"
+  else
+    __environment="${_setenv_arg}
+${__environment}"
+  fi
+
+  unset _setenv_arg
+  return 0
+}
+
+##
+# Prepare environment variables for run0
+_prepenv_run0() {
+  _prepenv_run0_key="$1"
+  _prepenv_run0_value="$2"
+
+  _setenv "--setenv=${_prepenv_run0_key}=${_prepenv_run0_value}" || return 1
+
+  unset _prepenv_run0_key
+  unset _prepenv_run0_value
+  return 0
+}
+
+##
+# Prepare environment variable to be passed to execute command
+_prepenv() {
+  _prepenv_key="$1"
+  _prepenv_value="$2"
+
+  if [ -z "${__adopted_env}" ]; then
+    __adopted_env="${_prepenv_key}"
+  else
+    if printf -- '%s\n' "${__adopted_env}" | grep -q "^${_prepenv_key}$" >/dev/null2 >&1; then
+      # Already adopted
+      unset _prepenv_key
+      unset _prepenv_value
+      return 0
+    else
+      __adopted_env="${_prepenv_key}
+${__adopted_env}"
+    fi
+  fi
+
+  if [ "${__runner}" = "run0" ]; then
+    _prepenv_run0 "${_prepenv_key}" "${_prepenv_value}" || {
+      printf -- 'Failed to prep run0 environment %s=%s\n' "${_prepenv_key}" "${_prepenv_value}"
+      unset _prepenv_key
+      unset _prepenv_value
+      return 1
+    }
+  else
+    printf -- 'Unsupported runner program %s. Cannot prepare environment %s=%s\n' "${__runner}" "${_prepenv_key}" "${_prepenv_value}"
+    unset _prepenv_key
+    unset _prepenv_value
+    return 1
+  fi
+
+  unset _prepenv_key
+  unset _prepenv_value
+  return 0
+}
+
+##
+# Prepare facl variable to be passed to execute command
+_prepfacl() {
+  _prepfacl_path="$1"
+
+  if [ -z "${__facl_paths}" ]; then
+    __facl_paths="${_prepfacl_path}"
+  else
+    if printf -- '%s\n' "${__facl_paths}" | grep -q "^${_prepfacl_path}$" >/dev/null2 >&1; then
+      # Already adopted
+      unset _prepfacl_path
+      return 0
+    else
+      __facl_paths="${_prepfacl_path}
+${__facl_paths}"
+    fi
+  fi
+
+  unset _prepfacl_path
+  return 0
+}
+
+_parse_env() {
+  _parse_env_var="$1"
+  _parse_env_required="$2"
+
+  if [ -n "${_parse_env_var}" ]; then
+    _env_value="$(_evalenv "${_parse_env_var}")"
+    if [ -n "${_env_value}" ]; then
+      _prepenv "${_parse_env_var}" "${_env_value}" || {
+        unset _env_value
+        unset _parse_env_var
+        unset _parse_env_required
+        return 1
+      }
+    else
+      if [ "${_parse_env_required}" -eq 1 ]; then
+        printf -- 'Environment variable is required for %s\n' "${_parse_env_var}"
+
+        unset _env_value
+        unset _parse_env_var
+        unset _parse_env_required
+        return 1
+      fi
+    fi
+    unset _env_value
+  else
+    printf -- 'Variable is required for --env\n'
+
+    unset _parse_env_var
+    unset _parse_env_required
+    return 1
+  fi
+
+  unset _parse_env_var
+  unset _parse_env_required
+  return 0
+}
+
+_parse_env_equals() {
+  _parse_env_var="$1"
+  _parse_env_required="$2"
+
+  _env_var="$(printf -- '%s' "${_parse_env_var}" | tr '=' ' ' | awk '{ print $2 }')"
+  if [ -z "${_env_var}" ]; then
+    printf -- 'Variable is required for --env=\n'
+
+    unset _env_var
+    unset _parse_env_var
+    unset _parse_env_required
+    return 1
+  fi
+
+  _env_value="$(_evalenv "${_env_var}")"
+  if [ -n "${_env_value}" ]; then
+    _prepenv "${_env_var}" "${_env_value}" || {
+      unset _env_value
+      unset _env_var
+      unset _parse_env_var
+      unset _parse_env_required
+      return 1
+    }
+  else
+    if [ "${_parse_env_required}" -eq 1 ]; then
+      printf -- 'Environment variable is required for %s\n' "${_parse_env_var}"
+
+      unset _env_value
+      unset _parse_env_var
+      unset _parse_env_required
+      return 1
+    fi
+  fi
+  unset _env_value
+  unset _env_var
+  unset _parse_env_var
+  unset _parse_env_required
+
+  return 0
+}
+
+_parse_facl() {
+  _parse_facl_path="$1"
+  _parse_facl_required="$2"
+
+  if [ -n "${_parse_facl_path}" ] && [ -e "${_parse_facl_path}" ]; then
+    _prepfacl "${_parse_facl_path}" || {
+      unset _parse_facl_path
+      unset _parse_facl_required
+      return 1
+    }
+  else
+    printf -- 'Device path is required for --facl\n'
+
+    unset _parse_facl_path
+    unset _parse_facl_required
+    return 1
+  fi
+
+  unset _parse_facl_path
+  unset _parse_facl_required
+  return 0
+}
+
+_parse_facl_equals() {
+  _parse_facl_path="$1"
+  _parse_facl_required="$2"
+
+  _facl_path="$(printf -- '%s' "${_parse_facl_path}" | tr '=' ' ' | awk '{ print $2 }')"
+  if [ -z "${_facl_path}" ]; then
+    printf -- 'Device path is required for --facl=\n'
+
+    unset _facl_path
+    unset _parse_facl_path
+    unset _parse_facl_required
+    return 1
+  fi
+
+  if [ -e "${_facl_path}" ]; then
+    _prepfacl "${_facl_path}" || {
+      unset _facl_path
+      unset _parse_facl_path
+      unset _parse_facl_required
+      return 1
+    }
+  else
+    if [ "${_parse_facl_required}" -eq 1 ]; then
+      printf -- 'Device path variable is required for %s\n' "${_parse_facl_path}"
+
+      unset _parse_facl_path
+      unset _parse_facl_required
+      return 1
+    fi
+  fi
+  unset _facl_path
+  unset _parse_facl_path
+  unset _parse_facl_required
+
+  return 0
+}
+
+##
+# Prepare to share X11 server access
+_prepare_x11() {
+  if ! _execfrom xhost "+SI:localuser:${__to_user}"; then
+    printf -- 'Failed to grant xhost access %s => %s\n' "${__from_user}" "${__to_user}"
+    return 1
+  fi
+
+  return 0
+}
+
+##
+# Cleanup shared audio server access
+_cleanup_x11() {
+  if [ "${__run_x11_hooks}" -eq 1 ]; then
+    printf -- 'Clean up X11 xhost access...\n'
+
+    _execfrom xhost "-SI:localuser:${__to_user}" >/dev/null 2>&1
+  fi
+
+  return 0
+}
+
+##
+# Prepare to share audio server access
+_prepare_audio() {
+  # As the from user, launch the TCP socket
+  __pactl_module_id="$(_execfrom pactl load-module "${_PACTL_MODULE}" listen=127.0.0.1 port="${_PACTL_PORT}")"
+
+  # If module fails to load, well shit
+  if [ -z "${__pactl_module_id}" ]; then
+    printf -- 'Failed to setup %s module for audio\n' "${_PACTL_MODULE}"
+    return 1
+  fi
+
+  # As the to user, prepare to consume the socket
+  _prepenv "PULSE_SERVER" "tcp:127.0.0.1:${_PACTL_PORT}" || return 1
+
+  printf -- 'Allow TCP connections to audio server at tcp:127.0.0.1:%s (%s)\n' "${_PACTL_PORT}" "${__pactl_module_id}"
+  return 0
+}
+
+##
+# Cleanup shared audio server access
+_cleanup_audio() {
+  if [ "${__run_audio_hooks}" -eq 1 ]; then
+    if [ -n "${__pactl_module_id}" ]; then
+      printf -- 'Clean up audio TCP module at tcp:127.0.0.1:%s (%s)\n' "${_PACTL_PORT}" "${__pactl_module_id}"
+
+      # Teardown the TCP socket module
+      _execfrom pactl unload-module "${__pactl_module_id}" >/dev/null 2>&1
+
+      unset __pactl_module_id
+    fi
+  fi
+
+  return 0
+}
+
+_cleanup() {
+  _cleanup_audio
+  _cleanup_x11
+  _revokefacl
+  return 0
+}
+
+main() {
+  # No commands print usage
+  if [ -z "$1" ]; then
+    _usage || return 1
+    return 1
+  fi
+
+  # Check we are root
+  #
+  # Maybe in the future we won't need to be root as long as we have certain CAPS but for now, root.
+  if [ "$(id -u)" -ne 0 ]; then
+    printf -- 'You must run this as root.\n\n'
+    _usage || return 1
+    return 1
+  fi
+
+  while [ -n "$1" ]; do
+    _cmd="$1"
+
+    case "${_cmd}" in
+    --from=*)
+      __from_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
+      if [ -z "${__from_user}" ]; then
+        __from_user=""
+        printf -- 'User is required for --from=\n'
+        return 1
+      fi
+      ;;
+    -F | --from)
+      if [ -n "$2" ]; then
+        __from_user="$2"
+      else
+        __from_user=""
+        printf -- 'User is required for -F | --from\n'
+        return 1
+      fi
+      shift
+      ;;
+    --to=*)
+      __to_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
+      if [ -z "${__to_user}" ]; then
+        __to_user=""
+        printf -- 'User is required for --to-user=\n'
+        return 1
+      fi
+      ;;
+    -T | --to)
+      if [ -n "$2" ]; then
+        __to_user="$2"
+      else
+        __to_user=""
+        printf -- 'User is required for -T | --to\n'
+        return 1
+      fi
+      shift
+      ;;
+    --env=*)
+      _parse_env_equals "$1" 0 || return 1
+      ;;
+    --env)
+      _parse_env "$2" 0 || return 1
+      shift
+      ;;
+    --require-env=*)
+      _parse_env_equals "$1" 1 || return 1
+      ;;
+    --require-env)
+      _parse_env "$2" 1 || return 1
+      shift
+      ;;
+    --facl=*)
+      _parse_facl_equals "$1" 0 || return 1
+      ;;
+    --facl)
+      _parse_facl "$2" 0 || return 1
+      shift
+      ;;
+    --x11)
+      __run_x11_hooks=1
+      _parse_env "DISPLAY" 1 || return 1
+      _parse_env "XAUTHORITY" 1 || return 1
+      _parse_env "WAYLAND_DISPLAY" 1 || return 1
+      ;;
+    --audio)
+      __run_audio_hooks=1
+      ;;
+    -H | -h | --help)
+      _usage || return 1
+      return 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      printf -- 'Unrecognized option: %s\n\n' "${_cmd}"
+      _usage || return 1
+      return 1
+      ;;
+    esac
+
+    shift
+    unset _cmd
+  done
+  unset _cmd
+
+  if [ -z "${__from_user}" ]; then
+    printf -- 'Must have target "--from"\n'
+    _usage || return 1
+    return 1
+  fi
+
+  if [ -z "${__to_user}" ]; then
+    printf -- 'Must have target "--to"\n'
+    _usage || return 1
+    return 1
+  fi
+
+  if [ "${__from_user}" = "${__to_user}" ]; then
+    printf -- '"from" and "to" user must not be the same: %s\n' "${__from_user}"
+    return 1
+  fi
+
+  # Trap signals and cleanup
+  trap _cleanup INT TERM
+
+  if [ "${__run_x11_hooks}" -eq 1 ]; then
+    _prepare_x11 || {
+      printf -- 'Failed to prepare X11 environment from %s => %s' "${__from_user}" "${__to_user}"
+      _cleanup || return 1
+      return 1
+    }
+  fi
+
+  # Grant FACLS
+  __grantfacl || {
+    _cleanup || return 1
+    return 1
+  }
+
+  if [ "${__run_audio_hooks}" -eq 1 ]; then
+    # Audio must be linked last since it sets an environment variable
+    _prepare_audio || {
+      printf -- 'Failed to prepare audio environment from %s => %s' "${__from_user}" "${__to_user}"
+      _cleanup || return 1
+      return 1
+    }
+  fi
+
+  # Execute
+  _execto "$@"
+
+  _cleanup || return 1
+  return 0
+}
+
+main "$@" || exit 1
+exit 0
