@@ -76,9 +76,6 @@ EOF
 
 __grantfacl() {
   if [ -n "${__facl_paths}" ]; then
-    # We must evaluate the environment for the "from" user since run0 may not setup the environment in this
-    # non-interactive shell
-
     # Set the IFS to newline only
     _old_ifs="${IFS}"
     IFS="${_NEWLINE_IFS}"
@@ -113,9 +110,6 @@ ${__granted_facl_paths}"
 
 _revokefacl() {
   if [ -n "${__granted_facl_paths}" ]; then
-    # We must evaluate the environment for the "from" user since run0 may not setup the environment in this
-    # non-interactive shell
-
     # Set the IFS to newline only
     _old_ifs="${IFS}"
     IFS="${_NEWLINE_IFS}"
@@ -241,7 +235,7 @@ _evalenv() {
   # Try from systemctl
   _grabenvvar "${_evalenv_var}" systemctl --user show-environment || {
     # Fallback to env
-    _grabenvvar "${_evalenv_var}" systemctl --user show-environment || {
+    _grabenvvar "${_evalenv_var}" env || {
       unset _evalenv_var
       return 1
     }
