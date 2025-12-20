@@ -8,7 +8,7 @@ pkgname=usergrant-git
 # shellcheck disable=SC2034
 pkgdesc="Temporarily grant ACLs and environment to a secondary user for the duration of a command"
 # shellcheck disable=SC2034
-pkgver="0.0.1".r2.041e777
+pkgver="0.0.1".r1.7e6e116
 # shellcheck disable=SC2034
 pkgrel=1
 # shellcheck disable=SC2034
@@ -64,7 +64,6 @@ package() {
   mkdir -p "${pkgdir}/usr/bin"
   mkdir -p "${pkgdir}/usr/share/doc/${_gitname}"
   mkdir -p "${pkgdir}/usr/share/licenses/${_gitname}"
-  mkdir -p "${pkgdir}/usr/lib/systemd/system"
 
   cp "${_gitname}" "${pkgdir}/usr/bin/${_gitname}"
   cp "LICENSE" "${pkgdir}/usr/share/licenses/${_gitname}/LICENSE"
