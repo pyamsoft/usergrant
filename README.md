@@ -9,7 +9,8 @@ is only available to users on a physical seat.
 
 If you run "secondary" or "delegated" users, you cannot use this.
 
-Yes you can setup udev rules, but sometimes you just want a quick one-off
+Yes you can setup udev rules, but sometimes you just want a quick one-off.
+
 Plus, writing a script is fun.
 
 ## Issues
