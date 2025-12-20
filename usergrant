@@ -68,7 +68,6 @@ Run a [command] as "to" user using granted environment and FACLs from the "from"
 --wayland                                                 Shortcut to adopt environment to run wayland clients
 --x11                                                     Shortcut to adopt environment to run X11 clients
 --audio                                                   Shortcut to adopt environment to play audio via pipewire or pulseaudio
---input <relative-path> | --input=<relative-path>         Shortcut for --facl=/dev/input/<relative-path>
 
 --                                                        Stop processing command line arguments
 EOF
