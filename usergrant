@@ -566,6 +566,9 @@ main() {
         _log 'User is required for --from=\n'
         return 1
       fi
+
+      # Ensure this is a name
+      __from_user="$(id -u -n "${__from_user}")"
       ;;
     -F | --from)
       if [ -n "$2" ]; then
@@ -576,6 +579,9 @@ main() {
         return 1
       fi
       shift
+
+      # Ensure this is a name
+      __from_user="$(id -u -n "${__from_user}")"
       ;;
     --to=*)
       __to_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
@@ -584,6 +590,9 @@ main() {
         _log 'User is required for --to-user=\n'
         return 1
       fi
+
+      # Ensure this is a name
+      __to_user="$(id -u -n "${__to_user}")"
       ;;
     -T | --to)
       if [ -n "$2" ]; then
@@ -594,6 +603,9 @@ main() {
         return 1
       fi
       shift
+
+      # Ensure this is a name
+      __to_user="$(id -u -n "${__to_user}")"
       ;;
     --env=*)
       _parse_env_equals "$1" 0 || return 1
