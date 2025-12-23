@@ -593,7 +593,12 @@ main() {
       fi
 
       # Ensure this is a name
-      __from_user="$(id -u -n "${__from_user}")"
+      if id -u -n "${__from_user}" >/dev/null 2>&1; then
+        __from_user="$(id -u -n "${__from_user}")"
+      else
+        _log 'Valid user is required for --from= (%s)\n' "${__from_user}"
+        return 1
+      fi
       ;;
     -F | --from)
       if [ -n "$2" ]; then
@@ -606,18 +611,28 @@ main() {
       shift
 
       # Ensure this is a name
-      __from_user="$(id -u -n "${__from_user}")"
+      if id -u -n "${__from_user}" >/dev/null 2>&1; then
+        __from_user="$(id -u -n "${__from_user}")"
+      else
+        _log 'Valid user is required for -F | --from (%s)\n' "${__from_user}"
+        return 1
+      fi
       ;;
     --to=*)
       __to_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
       if [ -z "${__to_user}" ]; then
         __to_user=""
-        _log 'User is required for --to-user=\n'
+        _log 'User is required for --to=\n'
         return 1
       fi
 
       # Ensure this is a name
-      __to_user="$(id -u -n "${__to_user}")"
+      if id -u -n "${__to_user}" >/dev/null 2>&1; then
+        __to_user="$(id -u -n "${__to_user}")"
+      else
+        _log 'Valid user is required for --to= (%s)\n' "${__to_user}"
+        return 1
+      fi
       ;;
     -T | --to)
       if [ -n "$2" ]; then
@@ -631,6 +646,12 @@ main() {
 
       # Ensure this is a name
       __to_user="$(id -u -n "${__to_user}")"
+      if id -u -n "${__to_user}" >/dev/null 2>&1; then
+        __to_user="$(id -u -n "${__to_user}")"
+      else
+        _log 'Valid user is required for -T | --to (%s)\n' "${__to_user}"
+        return 1
+      fi
       ;;
     --env=*)
       _parse_env_equals "$1" 0 || return 1
