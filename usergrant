@@ -141,61 +141,86 @@ _revokefacl() {
 ##
 # Run a command as "from" user
 _execfrom() {
-  if command -v "${__runner}" >/dev/null; then
-    # We must evaluate the environment for the "from" user since run0 may not setup the environment in this
-    # non-interactive shell
+  _execfrom_executed=0
 
-    # Set the IFS to newline only
-    _old_ifs="${IFS}"
-    IFS="${_NEWLINE_IFS}"
-    # Assign the arguments to the "$@" array
-    #
-    # this will safely evaluate arguments with nested spaces without requiring eval
-    #
-    # shellcheck disable=SC2086
-    set -- ${__environment} "$@"
-    IFS="${_old_ifs}"
-    unset _old_ifs
+  if [ "${__runner}" = "run0" ]; then
+    if command -v run0 >/dev/null; then
+      # We must evaluate the environment for the "from" user since run0 may not setup the environment in this
+      # non-interactive shell
 
-    # shellcheck disable=SC2016
-    "${__runner}" --background="" -u "${__from_user}" "$@" || {
-      _log 'Unable to use "%s" to execute command as %s.\n' "${__runner}" "${__from_user}" >&2
-      return 1
-    }
-  else
+      # Set the IFS to newline only
+      _old_ifs="${IFS}"
+      IFS="${_NEWLINE_IFS}"
+      # Assign the arguments to the "$@" array
+      #
+      # this will safely evaluate arguments with nested spaces without requiring eval
+      #
+      # shellcheck disable=SC2086
+      set -- ${__environment} "$@"
+      IFS="${_old_ifs}"
+      unset _old_ifs
+
+      _execfrom_executed=1
+
+      # shellcheck disable=SC2016
+      run0 --background="" -u "${__from_user}" "$@" || {
+        _log 'Unable to use "run0" to execute command as %s.\n' "${__from_user}" >&2
+
+        unset _execfrom_executed
+        return 1
+      }
+    fi
+  fi
+
+  if [ "${_execfrom_executed}" -eq 0 ]; then
     _log 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
+    unset _execfrom_executed
     return 1
   fi
 
+  unset _execfrom_executed
   return 0
 }
 
 ##
 # Run a command as "to" user
 _execto() {
-  if command -v "${__runner}" >/dev/null; then
-    # Set the IFS to newline only
-    _old_ifs="${IFS}"
-    IFS="${_NEWLINE_IFS}"
-    # Assign the arguments to the "$@" array
-    #
-    # this will safely evaluate arguments with nested spaces without requiring eval
-    #
-    # shellcheck disable=SC2086
-    set -- ${__environment} "$@"
-    IFS="${_old_ifs}"
-    unset _old_ifs
+  _execto_executed=0
 
-    # shellcheck disable=SC2016
-    "${__runner}" --background="" -u "${__to_user}" "$@" || {
-      _log 'Unable to use "%s" to execute command as %s.\n' "${__runner}" "${__to_user}" >&2
-      return 1
-    }
-  else
+  if [ "${__runner}" = "run0" ]; then
+    if command -v run0 >/dev/null; then
+      # Set the IFS to newline only
+      _old_ifs="${IFS}"
+      IFS="${_NEWLINE_IFS}"
+      # Assign the arguments to the "$@" array
+      #
+      # this will safely evaluate arguments with nested spaces without requiring eval
+      #
+      # shellcheck disable=SC2086
+      set -- ${__environment} "$@"
+      IFS="${_old_ifs}"
+      unset _old_ifs
+
+      _execto_executed=1
+
+      # shellcheck disable=SC2016
+      run0 --background="" -u "${__to_user}" "$@" || {
+        _log 'Unable to use "run0" to execute command as %s.\n' "${__to_user}" >&2
+
+        unset _execto_executed
+        return 1
+      }
+    fi
+  fi
+
+  if [ "${_execto_executed}" -eq 0 ]; then
     _log 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
+
+    unset _execto_executed
     return 1
   fi
 
+  unset _execto_executed
   return 0
 }
 
