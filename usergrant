@@ -46,6 +46,18 @@ _log() {
 }
 
 ##
+# Error Log
+#
+# Accepts arguments in the same format as printf
+# $1 message
+# $@ arguments
+##
+_elog() {
+  _log "$@" 1>&2 || return 1
+  return 0
+}
+
+##
 # Command usage
 _usage() {
   printf -- '%s\n' "$(
@@ -127,7 +139,7 @@ _revokefacl() {
         if setfacl -x "user:${__to_user}" "${_facl}" >/dev/null 2>&1; then
           _log 'Revoke facl %s from user %s\n' "${_facl}" "${__to_user}"
         else
-          _log 'Failed to revoke facl %s from user :%s\n' "${_facl}" "${__to_user}"
+          _elog 'Failed to revoke facl %s from user :%s\n' "${_facl}" "${__to_user}"
         fi
       fi
       unset _facl
@@ -164,7 +176,7 @@ _execfrom() {
 
       # shellcheck disable=SC2016
       run0 --background="" -u "${__from_user}" "$@" || {
-        _log 'Unable to use "run0" to execute command as %s.\n' "${__from_user}" >&2
+        _elog 'Unable to use "run0" to execute command as %s.\n' "${__from_user}" >&2
 
         unset _execfrom_executed
         return 1
@@ -173,7 +185,7 @@ _execfrom() {
   fi
 
   if [ "${_execfrom_executed}" -eq 0 ]; then
-    _log 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
+    _elog 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
     unset _execfrom_executed
     return 1
   fi
@@ -205,7 +217,7 @@ _execto() {
 
       # shellcheck disable=SC2016
       run0 --background="" -u "${__to_user}" "$@" || {
-        _log 'Unable to use "run0" to execute command as %s.\n' "${__to_user}" >&2
+        _elog 'Unable to use "run0" to execute command as %s.\n' "${__to_user}" >&2
 
         unset _execto_executed
         return 1
@@ -214,7 +226,7 @@ _execto() {
   fi
 
   if [ "${_execto_executed}" -eq 0 ]; then
-    _log 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
+    _elog 'Unable to evaluate environment, no valid runner (tried "%s") %s\n' "${__runner}" "${__from_user}" >&2
 
     unset _execto_executed
     return 1
@@ -246,13 +258,13 @@ _evalenv() {
   _evalenv_var="$1"
 
   if [ -z "${__from_user}" ]; then
-    _log 'Unable to evaluate environment, no "from" user\n' >&2
+    _elog 'Unable to evaluate environment, no "from" user\n' >&2
     unset _evalenv_var
     return 1
   fi
 
   if [ -z "${_evalenv_var}" ]; then
-    _log 'Unable to evaluate environment, no VAR passed for evaluation\n' >&2
+    _elog 'Unable to evaluate environment, no VAR passed for evaluation\n' >&2
     unset _evalenv_var
     return 1
   fi
@@ -320,13 +332,13 @@ ${__adopted_env}"
 
   if [ "${__runner}" = "run0" ]; then
     _prepenv_run0 "${_prepenv_key}" "${_prepenv_value}" || {
-      _log 'Failed to prep run0 environment %s=%s\n' "${_prepenv_key}" "${_prepenv_value}"
+      _elog 'Failed to prep run0 environment %s=%s\n' "${_prepenv_key}" "${_prepenv_value}"
       unset _prepenv_key
       unset _prepenv_value
       return 1
     }
   else
-    _log 'Unsupported runner program %s. Cannot prepare environment %s=%s\n' "${__runner}" "${_prepenv_key}" "${_prepenv_value}"
+    _elog 'Unsupported runner program %s. Cannot prepare environment %s=%s\n' "${__runner}" "${_prepenv_key}" "${_prepenv_value}"
     unset _prepenv_key
     unset _prepenv_value
     return 1
@@ -374,7 +386,7 @@ _parse_env() {
       }
     else
       if [ "${_parse_env_required}" -eq 1 ]; then
-        _log 'Environment variable is required for %s\n' "${_parse_env_var}"
+        _elog 'Environment variable is required for %s\n' "${_parse_env_var}"
 
         unset _env_value
         unset _parse_env_var
@@ -402,7 +414,7 @@ _parse_env_equals() {
 
   _env_var="$(printf -- '%s' "${_parse_env_var}" | tr '=' ' ' | awk '{ print $2 }')"
   if [ -z "${_env_var}" ]; then
-    _log 'Variable is required for --env=\n'
+    _elog 'Variable is required for --env=\n'
 
     unset _env_var
     unset _parse_env_var
@@ -421,7 +433,7 @@ _parse_env_equals() {
     }
   else
     if [ "${_parse_env_required}" -eq 1 ]; then
-      _log 'Environment variable is required for %s\n' "${_parse_env_var}"
+      _elog 'Environment variable is required for %s\n' "${_parse_env_var}"
 
       unset _env_value
       unset _parse_env_var
@@ -448,7 +460,7 @@ _parse_facl() {
       return 1
     }
   else
-    _log 'Device path is required for --facl\n'
+    _elog 'Device path is required for --facl\n'
 
     unset _parse_facl_path
     unset _parse_facl_required
@@ -466,7 +478,7 @@ _parse_facl_equals() {
 
   _facl_path="$(printf -- '%s' "${_parse_facl_path}" | tr '=' ' ' | awk '{ print $2 }')"
   if [ -z "${_facl_path}" ]; then
-    _log 'Device path is required for --facl=\n'
+    _elog 'Device path is required for --facl=\n'
 
     unset _facl_path
     unset _parse_facl_path
@@ -483,7 +495,7 @@ _parse_facl_equals() {
     }
   else
     if [ "${_parse_facl_required}" -eq 1 ]; then
-      _log 'Device path variable is required for %s\n' "${_parse_facl_path}"
+      _elog 'Device path variable is required for %s\n' "${_parse_facl_path}"
 
       unset _parse_facl_path
       unset _parse_facl_required
@@ -501,7 +513,7 @@ _parse_facl_equals() {
 # Prepare to share X11 server access
 _prepare_x11() {
   if ! _execfrom xhost "+SI:localuser:${__to_user}" >/dev/null 2>&1; then
-    _log 'Failed to grant xhost access %s => %s\n' "${__from_user}" "${__to_user}"
+    _elog 'Failed to grant xhost access %s => %s\n' "${__from_user}" "${__to_user}"
     return 1
   fi
 
@@ -529,7 +541,7 @@ _prepare_audio() {
 
   # If module fails to load, well shit
   if [ -z "${__pactl_module_id}" ]; then
-    _log 'Failed to setup %s module for audio\n' "${_PACTL_MODULE}"
+    _elog 'Failed to setup %s module for audio\n' "${_PACTL_MODULE}"
     return 1
   fi
 
@@ -575,7 +587,7 @@ main() {
   #
   # Maybe in the future we won't need to be root as long as we have certain CAPS but for now, root.
   if [ "$(id -u)" -ne 0 ]; then
-    _log 'You must run this as root.\n\n'
+    _elog 'You must run this as root.\n\n'
     _usage || return 1
     return 1
   fi
@@ -588,7 +600,7 @@ main() {
       __from_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
       if [ -z "${__from_user}" ]; then
         __from_user=""
-        _log 'User is required for --from=\n'
+        _elog 'User is required for --from=\n'
         return 1
       fi
 
@@ -596,7 +608,7 @@ main() {
       if id -u -n "${__from_user}" >/dev/null 2>&1; then
         __from_user="$(id -u -n "${__from_user}")"
       else
-        _log 'Valid user is required for --from= (%s)\n' "${__from_user}"
+        _elog 'Valid user is required for --from= (%s)\n' "${__from_user}"
         return 1
       fi
       ;;
@@ -605,7 +617,7 @@ main() {
         __from_user="$2"
       else
         __from_user=""
-        _log 'User is required for -F | --from\n'
+        _elog 'User is required for -F | --from\n'
         return 1
       fi
       shift
@@ -614,7 +626,7 @@ main() {
       if id -u -n "${__from_user}" >/dev/null 2>&1; then
         __from_user="$(id -u -n "${__from_user}")"
       else
-        _log 'Valid user is required for -F | --from (%s)\n' "${__from_user}"
+        _elog 'Valid user is required for -F | --from (%s)\n' "${__from_user}"
         return 1
       fi
       ;;
@@ -622,7 +634,7 @@ main() {
       __to_user="$(printf -- '%s' "${_cmd}" | tr '=' ' ' | awk '{ print $2 }')"
       if [ -z "${__to_user}" ]; then
         __to_user=""
-        _log 'User is required for --to=\n'
+        _elog 'User is required for --to=\n'
         return 1
       fi
 
@@ -630,7 +642,7 @@ main() {
       if id -u -n "${__to_user}" >/dev/null 2>&1; then
         __to_user="$(id -u -n "${__to_user}")"
       else
-        _log 'Valid user is required for --to= (%s)\n' "${__to_user}"
+        _elog 'Valid user is required for --to= (%s)\n' "${__to_user}"
         return 1
       fi
       ;;
@@ -639,7 +651,7 @@ main() {
         __to_user="$2"
       else
         __to_user=""
-        _log 'User is required for -T | --to\n'
+        _elog 'User is required for -T | --to\n'
         return 1
       fi
       shift
@@ -649,7 +661,7 @@ main() {
       if id -u -n "${__to_user}" >/dev/null 2>&1; then
         __to_user="$(id -u -n "${__to_user}")"
       else
-        _log 'Valid user is required for -T | --to (%s)\n' "${__to_user}"
+        _elog 'Valid user is required for -T | --to (%s)\n' "${__to_user}"
         return 1
       fi
       ;;
@@ -694,7 +706,7 @@ main() {
       break
       ;;
     *)
-      _log 'Unrecognized option: %s\n\n' "${_cmd}"
+      _elog 'Unrecognized option: %s\n\n' "${_cmd}"
       _usage || return 1
       return 1
       ;;
@@ -706,19 +718,19 @@ main() {
   unset _cmd
 
   if [ -z "${__from_user}" ]; then
-    _log 'Must have target "--from"\n'
+    _elog 'Must have target "--from"\n'
     _usage || return 1
     return 1
   fi
 
   if [ -z "${__to_user}" ]; then
-    _log 'Must have target "--to"\n'
+    _elog 'Must have target "--to"\n'
     _usage || return 1
     return 1
   fi
 
   if [ "${__from_user}" = "${__to_user}" ]; then
-    _log '"from" and "to" user must not be the same: %s\n' "${__from_user}"
+    _elog '"from" and "to" user must not be the same: %s\n' "${__from_user}"
     return 1
   fi
 
@@ -727,7 +739,7 @@ main() {
 
   if [ "${__run_x11_hooks}" -eq 1 ]; then
     _prepare_x11 || {
-      _log 'Failed to prepare X11 environment from %s => %s' "${__from_user}" "${__to_user}"
+      _elog 'Failed to prepare X11 environment from %s => %s' "${__from_user}" "${__to_user}"
       _cleanup || return 1
       return 1
     }
@@ -742,7 +754,7 @@ main() {
   if [ "${__run_audio_hooks}" -eq 1 ]; then
     # Audio must be linked last since it sets an environment variable
     _prepare_audio || {
-      _log 'Failed to prepare audio environment from %s => %s' "${__from_user}" "${__to_user}"
+      _elog 'Failed to prepare audio environment from %s => %s' "${__from_user}" "${__to_user}"
       _cleanup || return 1
       return 1
     }
